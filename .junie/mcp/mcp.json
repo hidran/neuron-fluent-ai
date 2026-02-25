@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "/opt/homebrew/Cellar/php/8.4.8/bin/php",
+            "args": [
+                "/Users/hidranarias/projects/PHP/neuronai/fluent-ai/artisan",
+                "boost:mcp"
+            ]
+        }
+    }
+}
