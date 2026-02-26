@@ -1,112 +1,107 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ReadingCategory;
-use App\Models\ReadingRecording;
-use App\Models\ReadingSession;
-use App\Services\AudioMimeTypeNormalizer;
+use App\Services\ReadingPractice\Data\SessionSaveData;
+use App\Services\ReadingPractice\ReadingPracticeService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
-class ReadingPracticeController extends Controller
+/**
+ * Controller for Reading Practice API.
+ * Uses PHP 8.4 Property Promotion and Strict Types.
+ */
+final class ReadingPracticeController extends Controller
 {
-    public function getCategories()
+    public function __construct(
+        private readonly ReadingPracticeService $service,
+    ) {}
+
+    public function getCategories(): JsonResponse
     {
-        return ReadingCategory::all();
+        return response()->json(ReadingCategory::all());
     }
 
-    public function generateText(Request $request)
-    {
-        $request->validate([
-            'topic' => 'required|string|max:255',
-            'level' => 'required|string|in:beginner,intermediate,advanced',
-        ]);
-
-        // This is where you would call your AI service to generate text.
-        // For now, we'll return some dummy data.
-        $generatedText = "This is a sample text about {$request->topic} for {$request->level} learners.";
-
-        return response()->json(['text' => $generatedText]);
-    }
-
-    public function analyzeRecording(Request $request)
-    {
-        $request->validate([
-            'audio' => 'required|file|mimes:mp3,wav,ogg',
-            'text' => 'required|string',
-        ]);
-
-        // This is where you would call your AI service to analyze the recording.
-        // For now, we'll return some dummy data.
-        $feedback = [
-            'pronunciation' => 85,
-            'intonation' => 90,
-            'grammar' => 95,
-            'feedback' => 'Great job! Your pronunciation was clear and your intonation was engaging. Keep up the good work.',
-        ];
-
-        return response()->json($feedback);
-    }
-
-    public function save(Request $request, AudioMimeTypeNormalizer $audioMimeTypeNormalizer)
+    public function generateText(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'text' => 'required|string',
-            'audio' => 'required|file|mimes:mp3,wav,ogg',
-            'feedback' => 'required|json',
-            'user_id' => 'required|exists:users,id',
-            'reading_category_id' => 'required|exists:reading_categories,id',
-            'language' => 'required|string',
+            'topic' => ['required', 'string', 'max:255'],
+            'level' => ['required', 'string', 'in:beginner,intermediate,advanced'],
+            'language' => ['nullable', 'string'],
+            'voice' => ['nullable', 'string', 'in:alloy,echo,fable,onyx,nova,shimmer'],
         ]);
 
-        $feedback = json_decode($validated['feedback'], true);
-        $audioFile = $request->file('audio');
+        $text = $this->service->generatePracticeText(
+            $validated['topic'],
+            $validated['language'] ?? 'English',
+            $validated['level']
+        );
+
+        $response = ['text' => $text];
+
+        if (! empty($validated['voice'])) {
+            $audio = $this->service->synthesizeSpeech($text, $validated['voice']);
+            $response['audio_url'] = $audio['audio_url'];
+        }
+
+        return response()->json($response);
+    }
+
+    public function analyzeRecording(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'audio' => ['required', 'file', 'mimes:mp3,wav,ogg,webm'],
+            'text' => ['required', 'string'],
+            'language' => ['nullable', 'string'],
+        ]);
+
+        $tempPath = $request->file('audio')->store('temp', 'public');
 
         try {
-            DB::beginTransaction();
+            $feedback = $this->service->analyzeCurrentRecording(
+                $tempPath,
+                $validated['text'],
+                $validated['language'] ?? 'English',
+                'public'
+            );
 
-            $readingSession = ReadingSession::create([
-                'user_id' => $validated['user_id'],
-                'reading_category_id' => $validated['reading_category_id'],
-                'language' => $validated['language'],
-                'generated_text' => $validated['text'],
-                'pronunciation_score' => $feedback['pronunciation'] ?? null,
-                'intonation_score' => $feedback['intonation'] ?? null,
-                'grammar_score' => $feedback['grammar'] ?? null,
-                'ai_feedback' => $feedback['feedback'] ?? null,
-            ]);
+            Storage::disk('public')->delete($tempPath);
 
-            $path = $audioFile->store('recordings', 'public');
+            return response()->json($feedback);
+        } catch (\Throwable $e) {
+            Storage::disk('public')->delete($tempPath);
 
-            ReadingRecording::create([
-                'reading_session_id' => $readingSession->id,
-                'audio_file_path' => $path,
-                'storage_disk' => 'public',
-                'mime_type' => $audioMimeTypeNormalizer->normalize(
-                    $audioFile->getMimeType(),
-                    $audioFile->getClientOriginalName()
-                ),
-                'file_size' => $audioFile->getSize(),
-                'ai_feedback' => $validated['feedback'],
-                'pronunciation_score' => $feedback['pronunciation'] ?? null,
-                'intonation_score' => $feedback['intonation'] ?? null,
-                'grammar_score' => $feedback['grammar'] ?? null,
-                'analyzed_at' => now(),
-            ]);
-
-            DB::commit();
-
-            return response()->json(['message' => 'Reading practice session saved successfully.']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            if (isset($path)) {
-                Storage::disk('public')->delete($path);
-            }
-
-            return response()->json(['message' => 'Failed to save session.', 'error' => $e->getMessage()], 500);
+            return response()->json(['message' => 'Analysis failed.', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    public function save(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'text' => ['required', 'string'],
+            'audio' => ['required', 'file', 'mimes:mp3,wav,ogg,webm'],
+            'feedback' => ['required', 'json'],
+            'user_id' => ['required', 'exists:users,id'],
+            'reading_category_id' => ['required', 'exists:reading_categories,id'],
+            'language' => ['required', 'string'],
+            'ai_audio_url' => ['nullable', 'string'],
+        ]);
+
+        $this->service->persistCompleteSession(new SessionSaveData(
+            userId: (int) $validated['user_id'],
+            category: ReadingCategory::findOrFail($validated['reading_category_id']),
+            language: $validated['language'],
+            text: $validated['text'],
+            audio: $request->file('audio'),
+            feedback: json_decode($validated['feedback'], true),
+            aiAudioUrl: $validated['ai_audio_url'] ?? null,
+        ));
+
+        return response()->json(['message' => 'Session saved successfully.']);
     }
 }

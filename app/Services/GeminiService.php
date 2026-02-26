@@ -1,9 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Agents\PronunciationAnalyzerAgent;
 use App\Agents\ReadingTextGeneratorAgent;
+use App\Contracts\ReadingPractice\AudioAnalyzerInterface;
+use App\Contracts\ReadingPractice\TextGeneratorInterface;
 use App\Dto\PronunciationFeedback;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -12,57 +16,45 @@ use NeuronAI\Chat\Messages\ContentBlocks\AudioContent;
 use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\UserMessage;
 
-class GeminiService
+class GeminiService implements AudioAnalyzerInterface, TextGeneratorInterface
 {
     public function __construct(
         protected AudioMimeTypeNormalizer $audioMimeTypeNormalizer,
     ) {}
 
     /**
-     * Generate reading text based on category and language using Neuron AI agent.
+     * {@inheritDoc}
      */
-    public function generateReadingText(string $categoryName, string $language, string $difficultyLevel = 'beginner'): string
+    public function generate(string $topic, string $language, string $difficulty): string
     {
         $agent = ReadingTextGeneratorAgent::make();
 
-        $prompt = "Generate a {$language} reading text about '{$categoryName}' at {$difficultyLevel} level.";
+        $prompt = "Generate a $language reading text about '$topic' at $difficulty level.";
 
-        $response = $agent->chat(new UserMessage($prompt));
-
-        return $response->getMessage()->getContent();
+        return $agent->chat(new UserMessage($prompt))
+            ->getMessage()
+            ->getContent();
     }
 
     /**
-     * Analyze audio recording and provide pronunciation, intonation, and grammar feedback using Neuron AI agent with structured output.
-     *
-     * @return array{pronunciation: int, intonation: int, grammar: int, feedback: string}
+     * {}
      */
-    public function analyzeAudioRecording(string $audioFilePath, string $originalText, string $language, ?string $disk = null): array
+    public function analyze(string $audioFilePath, string $originalText, string $language, ?string $disk = null): PronunciationFeedback
     {
         $storageDisk = $disk ?? config('filesystems.default');
         $diskStorage = Storage::disk($storageDisk);
         $audioBinary = $diskStorage->get($audioFilePath);
-        $detectedMimeType = (string) ($diskStorage->mimeType($audioFilePath) ?: '');
+        $detectedMimeType = (string) ($diskStorage->mimeType($audioFilePath) ?? '');
         $mimeType = $this->audioMimeTypeNormalizer->normalize($detectedMimeType, $audioFilePath);
 
-        Log::info('Pronunciation analysis audio payload prepared.', [
+        Log::info('Pronunciation analysis prepared.', [
             'disk' => $storageDisk,
             'path' => $audioFilePath,
-            'detected_mime_type' => $detectedMimeType,
-            'normalized_mime_type' => $mimeType,
-            'bytes' => strlen($audioBinary),
+            'mime' => $mimeType,
         ]);
 
-        $prompt = "Analyze this audio recording of someone reading the following text in {$language}:
-
-\"{$originalText}\"
-
-Please listen to the recording carefully and provide comprehensive feedback on pronunciation, intonation, and grammar.
-
-Use the attached audio file as the source of truth.";
-
         $message = new UserMessage([
-            new TextContent($prompt),
+            new TextContent("Analyze this recording of someone reading \"$originalText\" in $language."),
             new AudioContent(
                 base64_encode($audioBinary),
                 SourceType::BASE64,
@@ -70,24 +62,7 @@ Use the attached audio file as the source of truth.";
             ),
         ]);
 
-        $configuredModel = (string) config('services.gemini.pronunciation_model');
-
-        try {
-            $agent = PronunciationAnalyzerAgent::make();
-
-            $feedback = $agent->structured(
-                $message,
-                PronunciationFeedback::class
-            );
-
-            return $feedback->toArray();
-        } catch (\Throwable $exception) {
-            Log::warning('Pronunciation analysis failed using configured Gemini model.', [
-                'model' => $configuredModel,
-                'error' => $exception->getMessage(),
-            ]);
-
-            throw $exception;
-        }
+        return PronunciationAnalyzerAgent::make()
+            ->structured($message, PronunciationFeedback::class);
     }
 }

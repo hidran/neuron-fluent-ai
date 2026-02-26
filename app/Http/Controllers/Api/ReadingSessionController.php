@@ -14,7 +14,7 @@ class ReadingSessionController extends Controller
      */
     public function index(Request $request)
     {
-        return $request->user()->readingSessions()->latest()->paginate();
+        return ReadingSession::with('readingCategory')->latest()->paginate();
     }
 
     /**
@@ -30,11 +30,8 @@ class ReadingSessionController extends Controller
      */
     public function show(Request $request, ReadingSession $readingSession)
     {
-        if ($request->user()->id !== $readingSession->user_id) {
-            abort(403);
-        }
+        $readingSession->load(['recordings', 'readingCategory']);
 
-        $readingSession->load('recordings');
         return $readingSession;
     }
 
@@ -45,8 +42,6 @@ class ReadingSessionController extends Controller
     {
         //
     }
-
-
 
     /**
      * Remove the specified resource from storage.

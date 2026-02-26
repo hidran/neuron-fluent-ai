@@ -18,6 +18,7 @@ class ReadingSession extends Model
         'language',
         'generated_text',
         'ai_voice',
+        'ai_audio_path',
         'audio_file_path',
         'ai_feedback',
         'pronunciation_score',

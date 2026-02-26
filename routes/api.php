@@ -1,10 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\ReadingPracticeController;
+use App\Http\Controllers\Api\ReadingSessionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\ReadingPracticeController;
-
-use App\Http\Controllers\Api\ReadingSessionController;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
@@ -18,6 +17,4 @@ Route::prefix('reading-practice')->name('reading-practice.')->group(function () 
 });
 
 Route::apiResource('reading-sessions', ReadingSessionController::class)
-    ->only(['index', 'show'])
-    ->middleware('auth:sanctum');
-
+    ->only(['index', 'show']);

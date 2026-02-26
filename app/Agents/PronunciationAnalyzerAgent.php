@@ -9,8 +9,6 @@ use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Providers\Gemini\Gemini;
-use NeuronAI\Tools\ToolInterface;
-use NeuronAI\Tools\Toolkits\ToolkitInterface;
 
 class PronunciationAnalyzerAgent extends Agent
 {
@@ -50,21 +48,5 @@ class PronunciationAnalyzerAgent extends Agent
     protected function getOutputClass(): string
     {
         return PronunciationFeedback::class;
-    }
-
-    /**
-     * @return ToolInterface[]|ToolkitInterface[]
-     */
-    protected function tools(): array
-    {
-        return [];
-    }
-
-    /**
-     * Attach middleware to nodes.
-     */
-    protected function middleware(): array
-    {
-        return [];
     }
 }
