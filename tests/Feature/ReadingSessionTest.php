@@ -45,17 +45,16 @@ class ReadingSessionTest extends TestCase
         $this->assertInstanceOf(ReadingCategory::class, $session->readingCategory);
     }
 
-    public function test_can_store_ai_feedback_as_array(): void
+    public function test_can_store_ai_feedback_as_text(): void
     {
+        $feedback = 'Pronunciation is clear. Work on intonation.';
+
         $session = ReadingSession::factory()->create([
-            'ai_feedback' => ['pronunciation' => 'good', 'intonation' => 'needs work'],
+            'ai_feedback' => $feedback,
         ]);
 
-        $feedback = $session->ai_feedback;
-
-        $this->assertIsArray($feedback);
-        $this->assertEquals('good', $feedback['pronunciation']);
-        $this->assertEquals('needs work', $feedback['intonation']);
+        $this->assertIsString($session->ai_feedback);
+        $this->assertSame($feedback, $session->ai_feedback);
     }
 
     public function test_can_store_pronunciation_scores(): void

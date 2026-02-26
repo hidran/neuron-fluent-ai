@@ -2,15 +2,18 @@
 
 namespace Tests\Unit;
 
+use App\Models\ReadingRecording;
 use PHPUnit\Framework\TestCase;
 
 class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_that_true_is_true(): void
+    public function test_public_disk_playback_url_uses_relative_storage_path(): void
     {
-        $this->assertTrue(true);
+        $recording = new ReadingRecording([
+            'storage_disk' => 'public',
+            'audio_file_path' => '/reading-recordings/sample.webm',
+        ]);
+
+        $this->assertSame('/storage/reading-recordings/sample.webm', $recording->playbackUrl());
     }
 }

@@ -3,9 +3,10 @@
 namespace App\Filament\Pages;
 
 use App\Models\ReadingCategory;
-use App\Models\ReadingRecording;
 use App\Models\ReadingSession;
 use App\Services\GeminiService;
+use App\Services\ReadingPractice\ReadingPracticeStateService;
+use App\Services\ReadingPractice\ReadingRecordingService;
 use BackedEnum;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -15,13 +16,32 @@ use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
 
 class ReadingPractice extends Page implements HasForms
 {
     use InteractsWithForms;
     use WithFileUploads;
+
+    public const LANGUAGE_OPTIONS = [
+        'en' => 'English',
+        'es' => 'Spanish',
+        'fr' => 'French',
+        'de' => 'German',
+        'it' => 'Italian',
+        'pt' => 'Portuguese',
+    ];
+
+    public const VOICE_OPTIONS = [
+        'nova' => 'Nova',
+        'alloy' => 'Alloy',
+        'echo' => 'Echo',
+        'fable' => 'Fable',
+        'onyx' => 'Onyx',
+        'shimmer' => 'Shimmer',
+    ];
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedMicrophone;
 
@@ -64,27 +84,13 @@ class ReadingPractice extends Page implements HasForms
                     ->afterStateUpdated(fn () => $this->resetReadingState()),
                 Select::make('selectedLanguage')
                     ->label('Language')
-                    ->options([
-                        'en' => 'English',
-                        'es' => 'Spanish',
-                        'fr' => 'French',
-                        'de' => 'German',
-                        'it' => 'Italian',
-                        'pt' => 'Portuguese',
-                    ])
+                    ->options(self::LANGUAGE_OPTIONS)
                     ->required()
                     ->reactive()
                     ->afterStateUpdated(fn () => $this->resetReadingState()),
                 Select::make('selectedVoice')
                     ->label('AI Voice')
-                    ->options([
-                        'nova' => 'Nova',
-                        'alloy' => 'Alloy',
-                        'echo' => 'Echo',
-                        'fable' => 'Fable',
-                        'onyx' => 'Onyx',
-                        'shimmer' => 'Shimmer',
-                    ])
+                    ->options(self::VOICE_OPTIONS)
                     ->default('nova'),
             ])
             ->statePath('data');
@@ -104,21 +110,19 @@ class ReadingPractice extends Page implements HasForms
                 throw new \Exception('Category not found');
             }
 
-            $geminiService = app(GeminiService::class);
-
-            $this->generatedText = $geminiService->generateReadingText(
+            $this->generatedText = app(GeminiService::class)->generateReadingText(
                 $category->name,
                 $this->data['selectedLanguage'],
                 $category->difficulty_level
             );
 
-            $session = ReadingSession::create([
-                'user_id' => Auth::id(),
-                'reading_category_id' => $category->id,
-                'language' => $this->data['selectedLanguage'],
-                'generated_text' => $this->generatedText,
-                'ai_voice' => $this->data['selectedVoice'] ?? null,
-            ]);
+            $session = $this->stateService()->createSession(
+                $this->currentUserId(),
+                $category,
+                (string) $this->data['selectedLanguage'],
+                $this->generatedText,
+                $this->data['selectedVoice'] ?? null,
+            );
 
             $this->feedback = null;
             $this->recordingUpload = null;
@@ -132,7 +136,7 @@ class ReadingPractice extends Page implements HasForms
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Error generating text: ' . $e->getMessage(), [
+            Log::error('Error generating text: '.$e->getMessage(), [
                 'exception' => $e,
                 'trace' => $e->getTraceAsString(),
             ]);
@@ -160,6 +164,16 @@ class ReadingPractice extends Page implements HasForms
             'recordingUpload' => 'required|file|max:51200',
         ]);
 
+        if (! $this->recordingUpload instanceof TemporaryUploadedFile) {
+            Notification::make()
+                ->title('Invalid recording upload')
+                ->body('Please record audio again before analyzing.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $session = $this->getCurrentReadingSession();
 
         if (! $session) {
@@ -173,45 +187,16 @@ class ReadingPractice extends Page implements HasForms
         }
 
         try {
-            $storageDisk = 'public';
-            $storedPath = $this->recordingUpload->store('reading-recordings', $storageDisk);
-
-            $recording = $session->recordings()->create([
-                'storage_disk' => $storageDisk,
-                'audio_file_path' => $storedPath,
-                'mime_type' => $this->normalizeRecordedAudioMimeType(
-                    $this->recordingUpload->getMimeType(),
-                    $this->recordingUpload->getClientOriginalName()
-                ),
-                'file_size' => $this->recordingUpload->getSize(),
-            ]);
-
-            $geminiService = app(GeminiService::class);
-
-            $feedback = $geminiService->analyzeAudioRecording(
-                $recording->audio_file_path,
+            $recordingService = app(ReadingRecordingService::class);
+            $recording = $recordingService->storeUploadedRecording($session, $this->recordingUpload, 'public');
+            $feedback = $recordingService->analyzeAndPersistFeedback(
+                $session,
+                $recording,
                 $this->generatedText,
-                $this->data['selectedLanguage'],
-                $recording->storage_disk
+                (string) $this->data['selectedLanguage']
             );
 
             $this->feedback = $feedback;
-
-            $recording->update([
-                'ai_feedback' => $feedback['feedback'],
-                'pronunciation_score' => $feedback['pronunciation'],
-                'intonation_score' => $feedback['intonation'],
-                'grammar_score' => $feedback['grammar'],
-                'analyzed_at' => now(),
-            ]);
-
-            $session->update([
-                'audio_file_path' => $recording->audio_file_path,
-                'ai_feedback' => $feedback['feedback'],
-                'pronunciation_score' => $feedback['pronunciation'],
-                'intonation_score' => $feedback['intonation'],
-                'grammar_score' => $feedback['grammar'],
-            ]);
 
             $this->recordingUpload = null;
             $this->refreshSavedRecordings();
@@ -242,11 +227,7 @@ class ReadingPractice extends Page implements HasForms
 
     protected function loadSessionForRecording(int $sessionId): void
     {
-        $session = ReadingSession::query()
-            ->with('recordings')
-            ->whereKey($sessionId)
-            ->where('user_id', Auth::id())
-            ->first();
+        $session = $this->stateService()->findOwnedSession($sessionId, $this->currentUserId(), withRecordings: true);
 
         if (! $session) {
             Notification::make()
@@ -268,19 +249,7 @@ class ReadingPractice extends Page implements HasForms
         $this->currentReadingSessionId = $session->id;
         $this->recordingUpload = null;
 
-        $latestAnalyzedRecording = $session->recordings
-            ->whereNotNull('ai_feedback')
-            ->sortByDesc('analyzed_at')
-            ->first();
-
-        $this->feedback = $latestAnalyzedRecording
-            ? [
-                'pronunciation' => $latestAnalyzedRecording->pronunciation_score,
-                'intonation' => $latestAnalyzedRecording->intonation_score,
-                'grammar' => $latestAnalyzedRecording->grammar_score,
-                'feedback' => $latestAnalyzedRecording->ai_feedback,
-            ]
-            : null;
+        $this->feedback = $this->stateService()->latestFeedbackPayload($session);
 
         $this->refreshSavedRecordings();
 
@@ -297,10 +266,7 @@ class ReadingPractice extends Page implements HasForms
             return null;
         }
 
-        return ReadingSession::query()
-            ->whereKey($this->currentReadingSessionId)
-            ->where('user_id', Auth::id())
-            ->first();
+        return $this->stateService()->findOwnedSession($this->currentReadingSessionId, $this->currentUserId());
     }
 
     protected function refreshSavedRecordings(): void
@@ -313,48 +279,16 @@ class ReadingPractice extends Page implements HasForms
             return;
         }
 
-        $this->savedRecordings = $session->recordings()
-            ->latest()
-            ->get()
-            ->map(function (ReadingRecording $recording): array {
-                return [
-                    'id' => $recording->id,
-                    'audio_url' => $recording->playbackUrl(),
-                    'created_at' => $recording->created_at?->format('Y-m-d H:i:s'),
-                    'mime_type' => $recording->mime_type,
-                    'file_size' => $recording->file_size,
-                    'pronunciation_score' => $recording->pronunciation_score,
-                    'intonation_score' => $recording->intonation_score,
-                    'grammar_score' => $recording->grammar_score,
-                    'ai_feedback' => $recording->ai_feedback,
-                    'analyzed_at' => $recording->analyzed_at?->format('Y-m-d H:i:s'),
-                ];
-            })
-            ->all();
+        $this->savedRecordings = $this->stateService()->savedRecordingsPayload($session);
     }
 
-    protected function normalizeRecordedAudioMimeType(?string $mimeType, ?string $originalFilename = null): string
+    protected function currentUserId(): int
     {
-        $rawMimeType = strtolower(trim((string) $mimeType));
-        $baseMimeType = trim(strtok($rawMimeType, ';') ?: '');
+        return (int) Auth::id();
+    }
 
-        if ($baseMimeType === 'video/webm') {
-            return 'audio/webm';
-        }
-
-        if ($baseMimeType !== '') {
-            return $baseMimeType;
-        }
-
-        $extension = strtolower((string) pathinfo((string) $originalFilename, PATHINFO_EXTENSION));
-
-        return match ($extension) {
-            'webm' => 'audio/webm',
-            'ogg', 'oga' => 'audio/ogg',
-            'mp3' => 'audio/mpeg',
-            'wav' => 'audio/wav',
-            'm4a', 'mp4' => 'audio/mp4',
-            default => 'audio/webm',
-        };
+    protected function stateService(): ReadingPracticeStateService
+    {
+        return app(ReadingPracticeStateService::class);
     }
 }

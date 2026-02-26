@@ -2,14 +2,7 @@
     @php
         $savedRecordingCount = count($savedRecordings);
         $selectedLanguage = data_get($data, 'selectedLanguage');
-        $languageLabels = [
-            'en' => 'English',
-            'es' => 'Spanish',
-            'fr' => 'French',
-            'de' => 'German',
-            'it' => 'Italian',
-            'pt' => 'Portuguese',
-        ];
+        $languageLabels = \App\Filament\Pages\ReadingPractice::LANGUAGE_OPTIONS;
         $selectedLanguageLabel = $languageLabels[$selectedLanguage] ?? (filled($selectedLanguage) ? strtoupper((string) $selectedLanguage) : null);
         $feedbackText = trim((string) data_get($feedback, 'feedback', ''));
         $feedbackParagraphs = $feedbackText === ''

@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\ReadingCategory;
 use App\Models\ReadingRecording;
 use App\Models\ReadingSession;
+use App\Services\AudioMimeTypeNormalizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class ReadingPracticeController extends Controller
@@ -51,7 +51,7 @@ class ReadingPracticeController extends Controller
         return response()->json($feedback);
     }
 
-    public function save(Request $request)
+    public function save(Request $request, AudioMimeTypeNormalizer $audioMimeTypeNormalizer)
     {
         $validated = $request->validate([
             'text' => 'required|string',
@@ -85,7 +85,10 @@ class ReadingPracticeController extends Controller
                 'reading_session_id' => $readingSession->id,
                 'audio_file_path' => $path,
                 'storage_disk' => 'public',
-                'mime_type' => $audioFile->getMimeType(),
+                'mime_type' => $audioMimeTypeNormalizer->normalize(
+                    $audioFile->getMimeType(),
+                    $audioFile->getClientOriginalName()
+                ),
                 'file_size' => $audioFile->getSize(),
                 'ai_feedback' => $validated['feedback'],
                 'pronunciation_score' => $feedback['pronunciation'] ?? null,
@@ -102,8 +105,8 @@ class ReadingPracticeController extends Controller
             if (isset($path)) {
                 Storage::disk('public')->delete($path);
             }
+
             return response()->json(['message' => 'Failed to save session.', 'error' => $e->getMessage()], 500);
         }
     }
 }
-

@@ -14,6 +14,10 @@ use NeuronAI\Chat\Messages\UserMessage;
 
 class GeminiService
 {
+    public function __construct(
+        protected AudioMimeTypeNormalizer $audioMimeTypeNormalizer,
+    ) {}
+
     /**
      * Generate reading text based on category and language using Neuron AI agent.
      */
@@ -39,7 +43,7 @@ class GeminiService
         $diskStorage = Storage::disk($storageDisk);
         $audioBinary = $diskStorage->get($audioFilePath);
         $detectedMimeType = (string) ($diskStorage->mimeType($audioFilePath) ?: '');
-        $mimeType = $this->normalizeAudioMimeTypeForAnalysis($detectedMimeType, $audioFilePath);
+        $mimeType = $this->audioMimeTypeNormalizer->normalize($detectedMimeType, $audioFilePath);
 
         Log::info('Pronunciation analysis audio payload prepared.', [
             'disk' => $storageDisk,
@@ -66,58 +70,46 @@ Use the attached audio file as the source of truth.";
             ),
         ]);
 
-        $preferredModel = config('services.gemini.pronunciation_model');
-        $candidateModels = array_values(array_filter(array_unique([
-            $preferredModel,
-            'gemini-2.5-flash-lite',
-            'gemini-2.5-flash',
-            'gemini-flash-latest',
-            'gemini-2.0-flash',
-        ])));
+        $preferredModel = (string) config('services.gemini.pronunciation_model');
+        $candidateModels = $this->pronunciationModelCandidates($preferredModel);
 
         $originalPronunciationModel = $preferredModel;
         $lastException = null;
         $attemptErrors = [];
 
-        foreach ($candidateModels as $candidateModel) {
-            try {
-                config(['services.gemini.pronunciation_model' => $candidateModel]);
+        try {
+            foreach ($candidateModels as $candidateModel) {
+                try {
+                    config(['services.gemini.pronunciation_model' => $candidateModel]);
 
-                $agent = PronunciationAnalyzerAgent::make();
+                    $agent = PronunciationAnalyzerAgent::make();
 
-                $feedback = $agent->structured(
-                    $message,
-                    PronunciationFeedback::class
-                );
+                    $feedback = $agent->structured(
+                        $message,
+                        PronunciationFeedback::class
+                    );
 
-                config(['services.gemini.pronunciation_model' => $originalPronunciationModel]);
+                    return $feedback->toArray();
+                } catch (\Throwable $exception) {
+                    $lastException = $exception;
+                    $attemptErrors[] = [
+                        'model' => $candidateModel,
+                        'error' => $exception->getMessage(),
+                    ];
 
-                return $feedback->toArray();
-            } catch (\Throwable $exception) {
-                $lastException = $exception;
-                $attemptErrors[] = [
-                    'model' => $candidateModel,
-                    'error' => $exception->getMessage(),
-                ];
+                    Log::warning('Pronunciation analysis model failed, trying fallback if available.', [
+                        'model' => $candidateModel,
+                        'error' => $exception->getMessage(),
+                    ]);
 
-                Log::warning('Pronunciation analysis model failed, trying fallback if available.', [
-                    'model' => $candidateModel,
-                    'error' => $exception->getMessage(),
-                ]);
-
-                $messageText = $exception->getMessage();
-                $shouldRetry = str_contains($messageText, 'NOT_FOUND')
-                    || str_contains($messageText, 'models/')
-                    || str_contains($messageText, 'INTERNAL')
-                    || str_contains($messageText, 'Internal error encountered');
-
-                if (! $shouldRetry) {
-                    throw $exception;
+                    if (! $this->shouldRetryPronunciationFallback($exception)) {
+                        throw $exception;
+                    }
                 }
             }
+        } finally {
+            config(['services.gemini.pronunciation_model' => $originalPronunciationModel]);
         }
-
-        config(['services.gemini.pronunciation_model' => $originalPronunciationModel]);
 
         if ($lastException instanceof \Throwable) {
             $attemptSummary = collect($attemptErrors)
@@ -133,29 +125,27 @@ Use the attached audio file as the source of truth.";
         throw new \RuntimeException('Pronunciation analysis failed: no Gemini model candidates succeeded.');
     }
 
-    protected function normalizeAudioMimeTypeForAnalysis(?string $mimeType, string $audioFilePath): string
+    /**
+     * @return list<string>
+     */
+    protected function pronunciationModelCandidates(string $preferredModel): array
     {
-        $rawMimeType = strtolower(trim((string) $mimeType));
-        $baseMimeType = trim(strtok($rawMimeType, ';') ?: '');
-        $extension = strtolower((string) pathinfo($audioFilePath, PATHINFO_EXTENSION));
+        return array_values(array_filter(array_unique([
+            $preferredModel,
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-flash',
+            'gemini-flash-latest',
+            'gemini-2.0-flash',
+        ])));
+    }
 
-        $normalizedFromMime = match ($baseMimeType) {
-            'video/webm' => 'audio/webm',
-            'audio/x-wav' => 'audio/wav',
-            default => $baseMimeType,
-        };
+    protected function shouldRetryPronunciationFallback(\Throwable $exception): bool
+    {
+        $messageText = $exception->getMessage();
 
-        if ($normalizedFromMime !== '') {
-            return $normalizedFromMime;
-        }
-
-        return match ($extension) {
-            'webm' => 'audio/webm',
-            'ogg', 'oga' => 'audio/ogg',
-            'mp3' => 'audio/mpeg',
-            'wav' => 'audio/wav',
-            'm4a', 'mp4' => 'audio/mp4',
-            default => 'audio/webm',
-        };
+        return str_contains($messageText, 'NOT_FOUND')
+            || str_contains($messageText, 'models/')
+            || str_contains($messageText, 'INTERNAL')
+            || str_contains($messageText, 'Internal error encountered');
     }
 }

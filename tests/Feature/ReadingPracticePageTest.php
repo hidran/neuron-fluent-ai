@@ -23,8 +23,8 @@ class ReadingPracticePageTest extends TestCase
 
     public function test_reading_practice_page_can_render(): void
     {
-        $this->get('/admin/reading-practice')
-            ->assertOk();
+        Livewire::test(ReadingPractice::class)
+            ->assertFormExists();
     }
 
     public function test_reading_practice_page_has_form_components(): void
@@ -38,29 +38,32 @@ class ReadingPracticePageTest extends TestCase
 
     public function test_category_field_loads_active_categories(): void
     {
-        ReadingCategory::factory()->create(['name' => 'Active Cat', 'is_active' => true]);
-        ReadingCategory::factory()->create(['name' => 'Inactive Cat', 'is_active' => false]);
+        $activeCategory = ReadingCategory::factory()->create(['name' => 'Active Cat', 'is_active' => true]);
+        $inactiveCategory = ReadingCategory::factory()->create(['name' => 'Inactive Cat', 'is_active' => false]);
 
         Livewire::test(ReadingPractice::class)
-            ->assertFormFieldExists('selectedCategory')
-            ->assertSee('Active Cat')
-            ->assertDontSee('Inactive Cat');
+            ->assertFormFieldExists('selectedCategory', function ($field) use ($activeCategory, $inactiveCategory): bool {
+                $options = $field->getOptions();
+
+                return array_key_exists((string) $activeCategory->id, $options)
+                    && $options[(string) $activeCategory->id] === 'Active Cat'
+                    && ! array_key_exists((string) $inactiveCategory->id, $options);
+            });
     }
 
     public function test_language_field_has_language_options(): void
     {
         Livewire::test(ReadingPractice::class)
-            ->assertFormFieldExists('selectedLanguage')
-            ->assertSee('English')
-            ->assertSee('Spanish')
-            ->assertSee('French');
+            ->assertFormFieldExists('selectedLanguage', fn ($field): bool => $field->getOptions() === ReadingPractice::LANGUAGE_OPTIONS);
     }
 
     public function test_voice_field_has_default_value(): void
     {
         Livewire::test(ReadingPractice::class)
-            ->assertFormFieldExists('selectedVoice')
-            ->assertSee('Nova');
+            ->assertFormFieldExists('selectedVoice', fn ($field): bool => $field->getOptions() === ReadingPractice::VOICE_OPTIONS)
+            ->assertFormSet([
+                'selectedVoice' => 'nova',
+            ]);
     }
 
     public function test_can_select_category_and_language(): void
@@ -75,21 +78,23 @@ class ReadingPracticePageTest extends TestCase
             ->assertHasNoFormErrors();
     }
 
-    public function test_generated_text_field_is_initially_hidden(): void
+    public function test_reading_text_section_is_initially_hidden(): void
     {
         Livewire::test(ReadingPractice::class)
-            ->assertFormFieldIsHidden('generatedText');
+            ->assertDontSee('Read this passage aloud, then record your attempt.')
+            ->assertDontSee('Pronunciation Assessment');
     }
 
-    public function test_audio_upload_field_is_initially_hidden(): void
+    public function test_recording_controls_are_initially_hidden_until_text_is_generated(): void
     {
         Livewire::test(ReadingPractice::class)
-            ->assertFormFieldIsHidden('audioFile');
+            ->assertDontSee('Start Recording')
+            ->assertDontSee('Analyze Recording');
     }
 
     public function test_page_has_correct_title(): void
     {
-        $this->get('/admin/reading-practice')
+        Livewire::test(ReadingPractice::class)
             ->assertSee('Reading Practice');
     }
 

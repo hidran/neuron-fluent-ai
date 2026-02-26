@@ -7,13 +7,12 @@ use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_the_welcome_page_renders_with_the_configured_app_name(): void
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response
+            ->assertOk()
+            ->assertSee(config('app.name'));
     }
 }
