@@ -1,6 +1,6 @@
-# Fluent AI 🎙️
+# FluentAiPro
 
-Fluent AI is a high-performance, AI-driven language learning platform built with **Laravel 12 (PHP 8.4)** and **Next.js 15**. It provides real-time pronunciation coaching, dynamic lesson generation, and a professional practice dashboard.
+FluentAiPro is an AI-driven language learning platform built with **Laravel 12 (PHP 8.4)** and **Next.js 15**. It provides pronunciation coaching, dynamic lesson generation, AI reading playback, and a practice history dashboard.
 
 ## 🌟 Key Features
 
@@ -24,9 +24,19 @@ composer install
 cp .env.example .env # Configure your API keys
 php artisan key:generate
 php artisan migrate
+php artisan db:seed --class=DatabaseSeeder --no-interaction
+php artisan db:seed --class=ReadingCategorySeeder --no-interaction
 php artisan storage:link
 php artisan serve
 ```
+
+Add these AI env vars in `.env` (see docs for full configuration):
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `GEMINI_PRONUNCIATION_MODEL` (recommended: `gemini-2.5-flash-lite`)
+- `OPENAI_API_KEY`
+- `OPENAI_TTS_MODEL`
 
 ### 3. Frontend Setup
 ```bash
@@ -37,7 +47,7 @@ npm run dev
 
 ## 📖 Documentation
 
-Detailed technical guides, configuration options, and API references are available in the [Documentation](./docs/documentation.md).
+Detailed setup steps, configuration reference, and troubleshooting notes are available in [`docs/fluentaipro.md`](./docs/fluentaipro.md).
 
 ### API Highlights
 - **Reading Practice**: `/api/reading-practice/*` (Generation, Analysis, Saving)
