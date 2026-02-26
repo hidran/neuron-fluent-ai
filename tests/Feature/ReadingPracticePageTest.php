@@ -89,7 +89,8 @@ class ReadingPracticePageTest extends TestCase
     {
         Livewire::test(ReadingPractice::class)
             ->assertDontSee('Start Recording')
-            ->assertDontSee('Analyze Recording');
+            ->assertDontSee('Analyze Pronunciation')
+            ->assertDontSee('Play AI Reading');
     }
 
     public function test_page_has_correct_title(): void

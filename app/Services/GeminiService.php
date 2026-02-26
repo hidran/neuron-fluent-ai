@@ -70,82 +70,24 @@ Use the attached audio file as the source of truth.";
             ),
         ]);
 
-        $preferredModel = (string) config('services.gemini.pronunciation_model');
-        $candidateModels = $this->pronunciationModelCandidates($preferredModel);
-
-        $originalPronunciationModel = $preferredModel;
-        $lastException = null;
-        $attemptErrors = [];
+        $configuredModel = (string) config('services.gemini.pronunciation_model');
 
         try {
-            foreach ($candidateModels as $candidateModel) {
-                try {
-                    config(['services.gemini.pronunciation_model' => $candidateModel]);
+            $agent = PronunciationAnalyzerAgent::make();
 
-                    $agent = PronunciationAnalyzerAgent::make();
-
-                    $feedback = $agent->structured(
-                        $message,
-                        PronunciationFeedback::class
-                    );
-
-                    return $feedback->toArray();
-                } catch (\Throwable $exception) {
-                    $lastException = $exception;
-                    $attemptErrors[] = [
-                        'model' => $candidateModel,
-                        'error' => $exception->getMessage(),
-                    ];
-
-                    Log::warning('Pronunciation analysis model failed, trying fallback if available.', [
-                        'model' => $candidateModel,
-                        'error' => $exception->getMessage(),
-                    ]);
-
-                    if (! $this->shouldRetryPronunciationFallback($exception)) {
-                        throw $exception;
-                    }
-                }
-            }
-        } finally {
-            config(['services.gemini.pronunciation_model' => $originalPronunciationModel]);
-        }
-
-        if ($lastException instanceof \Throwable) {
-            $attemptSummary = collect($attemptErrors)
-                ->map(fn (array $attempt): string => "{$attempt['model']}: {$attempt['error']}")
-                ->implode(' | ');
-
-            throw new \RuntimeException(
-                "Pronunciation analysis failed across Gemini fallbacks. {$attemptSummary}",
-                previous: $lastException
+            $feedback = $agent->structured(
+                $message,
+                PronunciationFeedback::class
             );
+
+            return $feedback->toArray();
+        } catch (\Throwable $exception) {
+            Log::warning('Pronunciation analysis failed using configured Gemini model.', [
+                'model' => $configuredModel,
+                'error' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
         }
-
-        throw new \RuntimeException('Pronunciation analysis failed: no Gemini model candidates succeeded.');
-    }
-
-    /**
-     * @return list<string>
-     */
-    protected function pronunciationModelCandidates(string $preferredModel): array
-    {
-        return array_values(array_filter(array_unique([
-            $preferredModel,
-            'gemini-2.5-flash-lite',
-            'gemini-2.5-flash',
-            'gemini-flash-latest',
-            'gemini-2.0-flash',
-        ])));
-    }
-
-    protected function shouldRetryPronunciationFallback(\Throwable $exception): bool
-    {
-        $messageText = $exception->getMessage();
-
-        return str_contains($messageText, 'NOT_FOUND')
-            || str_contains($messageText, 'models/')
-            || str_contains($messageText, 'INTERNAL')
-            || str_contains($messageText, 'Internal error encountered');
     }
 }

@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\ReadingCategory;
 use App\Models\ReadingSession;
 use App\Services\GeminiService;
+use App\Services\OpenAiTextToSpeechService;
 use App\Services\ReadingPractice\ReadingPracticeStateService;
 use App\Services\ReadingPractice\ReadingRecordingService;
 use BackedEnum;
@@ -25,7 +26,7 @@ class ReadingPractice extends Page implements HasForms
     use InteractsWithForms;
     use WithFileUploads;
 
-    public const LANGUAGE_OPTIONS = [
+    public const array LANGUAGE_OPTIONS = [
         'en' => 'English',
         'es' => 'Spanish',
         'fr' => 'French',
@@ -34,7 +35,7 @@ class ReadingPractice extends Page implements HasForms
         'pt' => 'Portuguese',
     ];
 
-    public const VOICE_OPTIONS = [
+    public const array VOICE_OPTIONS = [
         'nova' => 'Nova',
         'alloy' => 'Alloy',
         'echo' => 'Echo',
@@ -56,6 +57,8 @@ class ReadingPractice extends Page implements HasForms
     public ?array $feedback = null;
 
     public ?int $currentReadingSessionId = null;
+
+    public ?string $aiReadingAudioUrl = null;
 
     public array $savedRecordings = [];
 
@@ -91,6 +94,10 @@ class ReadingPractice extends Page implements HasForms
                 Select::make('selectedVoice')
                     ->label('AI Voice')
                     ->options(self::VOICE_OPTIONS)
+                    ->reactive()
+                    ->afterStateUpdated(function (): void {
+                        $this->aiReadingAudioUrl = null;
+                    })
                     ->default('nova'),
             ])
             ->statePath('data');
@@ -127,6 +134,7 @@ class ReadingPractice extends Page implements HasForms
             $this->feedback = null;
             $this->recordingUpload = null;
             $this->currentReadingSessionId = $session->id;
+            $this->aiReadingAudioUrl = null;
             $this->refreshSavedRecordings();
 
             Notification::make()
@@ -216,11 +224,56 @@ class ReadingPractice extends Page implements HasForms
         }
     }
 
+    public function generateAiReadingAudio(): void
+    {
+        if (! $this->generatedText) {
+            Notification::make()
+                ->title('Generate text first')
+                ->body('Generate a reading text before creating AI audio.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $voice = (string) ($this->data['selectedVoice'] ?? 'nova');
+
+        try {
+            $ttsAudio = app(OpenAiTextToSpeechService::class)->synthesizeReading(
+                $this->generatedText,
+                $voice,
+                $this->currentReadingSessionId
+            );
+
+            $this->aiReadingAudioUrl = $ttsAudio['audio_url'];
+
+            Notification::make()
+                ->title('AI reading audio is ready')
+                ->body("Voice: {$voice}")
+                ->success()
+                ->send();
+        } catch (\Throwable $e) {
+            Log::error('Error generating AI reading audio: '.$e->getMessage(), [
+                'exception' => $e,
+                'trace' => $e->getTraceAsString(),
+                'voice' => $voice,
+                'session_id' => $this->currentReadingSessionId,
+            ]);
+
+            Notification::make()
+                ->title('Error generating AI reading audio')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
+    }
+
     protected function resetReadingState(): void
     {
         $this->generatedText = null;
         $this->feedback = null;
         $this->currentReadingSessionId = null;
+        $this->aiReadingAudioUrl = null;
         $this->savedRecordings = [];
         $this->recordingUpload = null;
     }
@@ -247,6 +300,7 @@ class ReadingPractice extends Page implements HasForms
 
         $this->generatedText = $session->generated_text;
         $this->currentReadingSessionId = $session->id;
+        $this->aiReadingAudioUrl = null;
         $this->recordingUpload = null;
 
         $this->feedback = $this->stateService()->latestFeedbackPayload($session);

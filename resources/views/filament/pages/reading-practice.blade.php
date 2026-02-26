@@ -27,33 +27,21 @@
                 @endif
             </div>
 
-            <form wire:submit="generateText" class="space-y-6">
-                <div class="rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40 sm:p-5">
-                    {{ $this->form }}
-                </div>
+            <div class="grid gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:items-start">
+                <form wire:submit="generateText" class="space-y-6">
+                    <div class="rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-800/40 sm:p-5">
+                        {{ $this->form }}
+                    </div>
 
-                <div class="flex flex-wrap gap-3">
-                    <x-filament::button type="submit" wire:loading.attr="disabled">
-                        Generate Reading Text
-                    </x-filament::button>
-
-                    @if ($generatedText)
-                        <x-filament::button
-                            color="success"
-                            id="analyzeRecording"
-                            type="button"
-                        >
-                            Analyze Recording
+                    <div class="flex flex-wrap gap-3">
+                        <x-filament::button type="submit" wire:loading.attr="disabled">
+                            Generate Reading Text
                         </x-filament::button>
-                    @endif
-                </div>
-            </form>
-        </section>
+                    </div>
+                </form>
 
-        @if ($generatedText)
-            <div class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-                <div class="space-y-6">
-                    <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-8">
+                <div class="rounded-xl border border-gray-200 bg-gray-50/60 p-5 dark:border-gray-700 dark:bg-gray-800/30 sm:p-6">
+                    @if ($generatedText)
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                                 <h3 class="text-lg font-semibold text-gray-950 dark:text-white">Reading Text</h3>
@@ -69,64 +57,181 @@
                                     </span>
                                 @endif
 
-                                <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                                <span class="inline-flex items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
                                     {{ $savedRecordingCount }} attempt{{ $savedRecordingCount === 1 ? '' : 's' }}
                                 </span>
                             </div>
                         </div>
 
-                        <div class="mt-5 rounded-xl border border-gray-200 bg-gray-50/70 p-5 dark:border-gray-700 dark:bg-gray-800/30 sm:p-6">
+                        <div class="mt-4 max-h-[26rem] overflow-y-auto rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900/80 sm:p-6">
                             <p class="whitespace-pre-line text-base leading-8 text-gray-800 dark:text-gray-100">
                                 {{ $generatedText }}
                             </p>
                         </div>
-
-                        <div class="mt-6 rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900 sm:p-6">
-                            <div class="mb-4 flex flex-col gap-1">
-                                <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-900 dark:text-gray-100">
-                                    Recorder
-                                </h4>
-                                <p class="text-sm text-gray-600 dark:text-gray-300">
-                                    Start, stop, and preview your attempt before sending it for analysis.
+                    @else
+                        <div class="flex h-full min-h-52 items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white/70 p-6 text-center dark:border-gray-700 dark:bg-gray-900/40">
+                            <div>
+                                <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
+                                    Reading preview
+                                </h3>
+                                <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                    Your generated passage will appear here next to the form so users can read without extra scrolling.
                                 </p>
                             </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </section>
 
-                            <div id="audioRecorder" class="space-y-4">
-                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <x-filament::button
-                                        color="danger"
-                                        id="startRecording"
-                                        type="button"
-                                        class="justify-center"
-                                    >
-                                        <x-filament::icon icon="heroicon-o-microphone" class="mr-2 h-5 w-5" />
-                                        Start Recording
-                                    </x-filament::button>
+        @if ($generatedText)
+            <div class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+                <div class="space-y-6">
+                    <section x-data="{ activeListenTab: 'ai' }" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-8">
+                        <div class="mb-4 flex flex-col gap-1">
+                            <h3 class="text-lg font-semibold text-gray-950 dark:text-white">Listen & Record</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-300">
+                                Play the AI example voice, then record and analyze your own attempt.
+                            </p>
+                        </div>
 
-                                    <x-filament::button
-                                        color="gray"
-                                        id="stopRecording"
-                                        type="button"
-                                        class="justify-center"
-                                    >
-                                        <x-filament::icon icon="heroicon-o-stop" class="mr-2 h-5 w-5" />
-                                        Stop Recording
-                                    </x-filament::button>
+                        <x-filament::tabs>
+                            <x-filament::tabs.item
+                                alpine-active="activeListenTab === 'ai'"
+                                x-on:click="activeListenTab = 'ai'"
+                            >
+                                AI Reading
+                            </x-filament::tabs.item>
 
-                                    <x-filament::button
-                                        color="info"
-                                        id="playRecording"
-                                        type="button"
-                                        class="justify-center"
-                                    >
-                                        <x-filament::icon icon="heroicon-o-play" class="mr-2 h-5 w-5" />
-                                        Play Recording
-                                    </x-filament::button>
+                            <x-filament::tabs.item
+                                alpine-active="activeListenTab === 'recorder'"
+                                x-on:click="activeListenTab = 'recorder'"
+                            >
+                                Recorder
+                            </x-filament::tabs.item>
+                        </x-filament::tabs>
+
+                        <div class="mt-5 space-y-4">
+                            <div
+                                x-show="activeListenTab === 'ai'"
+                                x-transition.opacity.duration.150ms
+                                class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900 sm:p-6"
+                            >
+                                <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                        <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-900 dark:text-gray-100">
+                                            AI Reading
+                                        </h4>
+                                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                                            Listen to the passage in the selected voice before recording your own attempt.
+                                        </p>
+                                    </div>
+
+                                    <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                                        Voice: {{ data_get($data, 'selectedVoice', 'nova') }}
+                                    </span>
                                 </div>
 
-                                <audio id="audioPlayback" controls class="w-full rounded-lg" style="display: none;"></audio>
+                                <div class="space-y-3">
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <x-filament::button
+                                            type="button"
+                                            color="info"
+                                            wire:click="generateAiReadingAudio"
+                                            wire:loading.attr="disabled"
+                                            wire:target="generateAiReadingAudio"
+                                        >
+                                            <x-filament::icon icon="heroicon-o-speaker-wave" class="mr-2 h-5 w-5" />
+                                            Play AI Reading
+                                        </x-filament::button>
 
-                                <p id="recordingStatus" class="min-h-5 text-sm text-gray-600 dark:text-gray-300"></p>
+                                        <span
+                                            wire:loading.flex
+                                            wire:target="generateAiReadingAudio"
+                                            class="items-center text-sm text-gray-500 dark:text-gray-400"
+                                        >
+                                            Generating AI audio...
+                                        </span>
+                                    </div>
+
+                                    @if ($aiReadingAudioUrl)
+                                        <audio
+                                            controls
+                                            preload="none"
+                                            class="w-full rounded-lg"
+                                            src="{{ $aiReadingAudioUrl }}"
+                                        ></audio>
+                                    @else
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                                            Click <span class="font-medium">Play AI Reading</span> to generate the AI voice audio for this text.
+                                        </p>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div
+                                x-show="activeListenTab === 'recorder'"
+                                x-transition.opacity.duration.150ms
+                                class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900 sm:p-6"
+                            >
+                                <div class="mb-4 flex flex-col gap-1">
+                                    <h4 class="text-sm font-semibold uppercase tracking-wide text-gray-900 dark:text-gray-100">
+                                        Recorder
+                                    </h4>
+                                    <p class="text-sm text-gray-600 dark:text-gray-300">
+                                        Start, stop, and preview your attempt before sending it for analysis.
+                                    </p>
+                                </div>
+
+                                <div id="audioRecorder" class="space-y-4">
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        <x-filament::button
+                                            color="danger"
+                                            id="startRecording"
+                                            type="button"
+                                            class="justify-center"
+                                        >
+                                            <x-filament::icon icon="heroicon-o-microphone" class="mr-2 h-5 w-5" />
+                                            Start Recording
+                                        </x-filament::button>
+
+                                        <x-filament::button
+                                            color="gray"
+                                            id="stopRecording"
+                                            type="button"
+                                            class="justify-center"
+                                        >
+                                            <x-filament::icon icon="heroicon-o-stop" class="mr-2 h-5 w-5" />
+                                            Stop Recording
+                                        </x-filament::button>
+
+                                        <x-filament::button
+                                            color="info"
+                                            id="playRecording"
+                                            type="button"
+                                            class="justify-center"
+                                        >
+                                            <x-filament::icon icon="heroicon-o-play" class="mr-2 h-5 w-5" />
+                                            Play Recording
+                                        </x-filament::button>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                                        <audio id="audioPlayback" controls class="w-full rounded-lg" style="display: none;"></audio>
+
+                                        <x-filament::button
+                                            color="success"
+                                            id="analyzeRecording"
+                                            type="button"
+                                            class="justify-center sm:self-center"
+                                        >
+                                            <x-filament::icon icon="heroicon-o-sparkles" class="mr-2 h-5 w-5" />
+                                            Analyze Pronunciation
+                                        </x-filament::button>
+                                    </div>
+
+                                    <p id="recordingStatus" class="min-h-5 text-sm text-gray-600 dark:text-gray-300"></p>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -308,7 +413,7 @@
             })
 
             const syncRecorderControls = () => {
-                const { stopRecordingBtn, playRecordingBtn } = getElements()
+                const { stopRecordingBtn, playRecordingBtn, analyzeRecordingBtn } = getElements()
 
                 if (stopRecordingBtn) {
                     stopRecordingBtn.disabled = !mediaRecorder || mediaRecorder.state === 'inactive'
@@ -316,6 +421,10 @@
 
                 if (playRecordingBtn) {
                     playRecordingBtn.disabled = !recordedBlob
+                }
+
+                if (analyzeRecordingBtn) {
+                    analyzeRecordingBtn.disabled = !recordedBlob
                 }
             }
 
@@ -426,7 +535,7 @@
                         audioPlayback.src = localAudioUrl
                         audioPlayback.style.display = 'block'
                         playRecordingBtn.disabled = false
-                        setStatus('Recording ready. Click Analyze Recording to save and analyze it.')
+                        setStatus('Recording ready. Click Analyze Pronunciation to save and analyze it.')
                         syncRecorderControls()
                     }, { once: true })
 
